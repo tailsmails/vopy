@@ -33,15 +33,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if [ ! -f "./vopy" ]; then
+if [ ! -f "./vopy" ] || [ "vopy.v" -nt "./vopy" ]; then
     log_info "Compiling vopy.v using V compiler..."
+    rm -f ./vopy
     if ! v vopy.v; then
         log_error "V compilation failed. Please make sure the V compiler is installed and in your PATH."
         exit 1
     fi
     log_success "vopy compiled successfully."
 else
-    log_info "Pre-compiled vopy binary detected. Skipping compilation to test the final release binary."
+    log_info "Pre-compiled vopy binary is up-to-date. Skipping compilation to test the final release binary."
 fi
 
 log_info "Running Test 1: Standard File Copy..."
@@ -63,7 +64,7 @@ rm -f test_dst.bin test_dst.bin.resume
 dd if=/dev/zero of=test_src.bin bs=1M count=500 2>/dev/null
 SRC_HASH=$(get_hash test_src.bin)
 
-./vopy -t 1 -v test_src.bin test_dst.bin >test_out.log 2>test_err.log &
+./vopy -t 0 -v test_src.bin test_dst.bin >test_out.log 2>test_err.log &
 VOPY_PID=$!
 
 METADATA_CREATED=false
