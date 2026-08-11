@@ -5,6 +5,9 @@ import flag
 import json
 import time
 
+fn C.fsync(fd int) int
+fn C._commit(fd int) int // idk about that pls test it
+
 struct CopyState {
 pub mut:
 	src_size u64
@@ -151,6 +154,12 @@ fn copy_file(src string, dst string, force bool, interactive bool, preserve bool
 			return error("Write failed at byte ${state.copied}. State saved.")
 		}
 		dst_file.flush()
+
+		$if windows {
+			C._commit(dst_file.fd)
+		} $else {
+			C.fsync(dst_file.fd)
+		}
 
 		state.copied += u64(read_bytes)
 
