@@ -17,7 +17,7 @@ pub mut:
 fn main() {
 	mut fp := flag.new_flag_parser(os.args)
 	fp.application('vopy')
-	fp.version('1.0.0')
+	fp.version('1.0.1')
 	fp.description('Resumable bit-by-bit file copy with checksum integrity.')
 	fp.skip_executable()
 
@@ -29,6 +29,7 @@ fn main() {
 	size_only := fp.bool('size-only', `s`, false, 'Skip files if size matches, ignoring modification time')
 	sync_interval := fp.int('sync-interval', `t`, 5, 'Time interval in seconds to sync metadata on disk')
 	smart_overwrite := fp.bool('smart-overwrite', `m`, false, 'Only overwrite changed blocks to preserve disk writes')
+	min_resume_size := fp.int('min-resume-size', `l`, 10485760, 'Minimum file size in bytes to enable resume metadata (default: 10MB)')
 
 	positional := fp.finalize() or {
 		eprintln('CLI Argument Error: ${err}')
@@ -53,7 +54,7 @@ fn main() {
 		if !dst.ends_with(os.file_name(src)) {
 			final_dst = os.join_path(dst, os.file_name(src))
 		}
-		copy_dir(src, final_dst, force, interactive, preserve, verbose, size_only, sync_interval, smart_overwrite) or {
+		copy_dir(src, final_dst, force, interactive, preserve, verbose, size_only, sync_interval, smart_overwrite, min_resume_size) or {
 			eprintln('Directory copy error: ${err}')
 			exit(1)
 		}
@@ -62,14 +63,14 @@ fn main() {
 		if os.is_dir(dst) {
 			final_dst = os.join_path(dst, os.file_name(src))
 		}
-		copy_file(src, final_dst, force, interactive, preserve, verbose, size_only, sync_interval, smart_overwrite) or {
+		copy_file(src, final_dst, force, interactive, preserve, verbose, size_only, sync_interval, smart_overwrite, min_resume_size) or {
 			eprintln('File copy error: ${err}')
 			exit(1)
 		}
 	}
 }
 
-fn copy_file(src string, dst string, force bool, interactive bool, preserve bool, verbose bool, size_only bool, sync_interval int, smart_overwrite bool) ! {
+fn copy_file(src string, dst string, force bool, interactive bool, preserve bool, verbose bool, size_only bool, sync_interval int, smart_overwrite bool, min_resume_size int) ! {
 	if !os.exists(src) {
 		return error("Source file '${src}' does not exist.")
 	}
@@ -77,9 +78,10 @@ fn copy_file(src string, dst string, force bool, interactive bool, preserve bool
 	meta_path := dst + '.resume'
 	tmp_meta_path := meta_path + '.tmp'
 	src_size := os.file_size(src)
+	use_resume := src_size >= u64(min_resume_size)
 
 	if os.exists(dst) && !force {
-		if os.file_size(dst) == src_size && !os.exists(meta_path) {
+		if os.file_size(dst) == src_size && (!use_resume || !os.exists(meta_path)) {
 			if !smart_overwrite && (size_only || os.file_last_mod_unix(src) == os.file_last_mod_unix(dst)) {
 				if verbose {
 					println("Skipping completed file: '${src}' -> '${dst}'")
@@ -108,7 +110,7 @@ fn copy_file(src string, dst string, force bool, interactive bool, preserve bool
 		copied: 0
 	}
 
-	if os.exists(meta_path) {
+	if use_resume && os.exists(meta_path) {
 		meta_raw := os.read_file(meta_path) or { '' }
 		if meta_raw != '' {
 			parsed_state := json.decode(CopyState, meta_raw) or { state }
@@ -123,7 +125,7 @@ fn copy_file(src string, dst string, force bool, interactive bool, preserve bool
 		println("Copying: '${src}' -> '${dst}'")
 	}
 
-	if !os.exists(dst) || !os.exists(meta_path) {
+	if !os.exists(dst) || (use_resume && !os.exists(meta_path)) || (!use_resume && os.file_size(dst) != src_size) {
 		mut f := os.create(dst) or { return err }
 		f.close()
 	}
@@ -137,7 +139,7 @@ fn copy_file(src string, dst string, force bool, interactive bool, preserve bool
 	src_file.seek(i64(state.copied), .start) or { return err }
 	dst_file.seek(i64(state.copied), .start) or { return err }
 
-	if !os.exists(meta_path) {
+	if use_resume && !os.exists(meta_path) {
 		os.write_file(tmp_meta_path, json.encode(state)) or {
 			return error("Failed to write temporary metadata. Halting.")
 		}
@@ -207,11 +209,13 @@ fn copy_file(src string, dst string, force bool, interactive bool, preserve bool
 					C.fsync(dst_file.fd)
 				}
 				state.copied += unflushed_bytes
-				os.write_file(tmp_meta_path, json.encode(state)) or {
-					return error("Failed to write temporary metadata. Halting.")
-				}
-				os.mv(tmp_meta_path, meta_path) or {
-					return error("Failed to atomically rename metadata. Halting.")
+				if use_resume {
+					os.write_file(tmp_meta_path, json.encode(state)) or {
+						return error("Failed to write temporary metadata. Halting.")
+					}
+					os.mv(tmp_meta_path, meta_path) or {
+						return error("Failed to atomically rename metadata. Halting.")
+					}
 				}
 				unflushed_bytes = 0
 			}
@@ -234,11 +238,13 @@ fn copy_file(src string, dst string, force bool, interactive bool, preserve bool
 			C.fsync(dst_file.fd)
 		}
 		state.copied += unflushed_bytes
-		os.write_file(tmp_meta_path, json.encode(state)) or {
-			return error("Failed to write temporary metadata. Halting.")
-		}
-		os.mv(tmp_meta_path, meta_path) or {
-			return error("Failed to atomically rename metadata. Halting.")
+		if use_resume {
+			os.write_file(tmp_meta_path, json.encode(state)) or {
+				return error("Failed to write temporary metadata. Halting.")
+			}
+			os.mv(tmp_meta_path, meta_path) or {
+				return error("Failed to atomically rename metadata. Halting.")
+			}
 		}
 	}
 
@@ -247,7 +253,9 @@ fn copy_file(src string, dst string, force bool, interactive bool, preserve bool
 		print('\rCopying: ${percent:.2f}% (${state.copied}/${state.src_size} bytes)\n')
 		os.flush()
 
-		os.rm(meta_path) or {}
+		if use_resume {
+			os.rm(meta_path) or {}
+		}
 
 		if preserve {
 			mtime := os.file_last_mod_unix(src)
@@ -261,7 +269,7 @@ fn copy_file(src string, dst string, force bool, interactive bool, preserve bool
 	}
 }
 
-fn copy_dir(src string, dst string, force bool, interactive bool, preserve bool, verbose bool, size_only bool, sync_interval int, smart_overwrite bool) ! {
+fn copy_dir(src string, dst string, force bool, interactive bool, preserve bool, verbose bool, size_only bool, sync_interval int, smart_overwrite bool, min_resume_size int) ! {
 	if !os.exists(dst) {
 		if verbose {
 			println("Creating directory: '${dst}'")
@@ -275,9 +283,9 @@ fn copy_dir(src string, dst string, force bool, interactive bool, preserve bool,
 		dst_child := os.join_path(dst, file)
 
 		if os.is_dir(src_child) {
-			copy_dir(src_child, dst_child, force, interactive, preserve, verbose, size_only, sync_interval, smart_overwrite) or { return err }
+			copy_dir(src_child, dst_child, force, interactive, preserve, verbose, size_only, sync_interval, smart_overwrite, min_resume_size) or { return err }
 		} else {
-			copy_file(src_child, dst_child, force, interactive, preserve, verbose, size_only, sync_interval, smart_overwrite) or { return err }
+			copy_file(src_child, dst_child, force, interactive, preserve, verbose, size_only, sync_interval, smart_overwrite, min_resume_size) or { return err }
 		}
 	}
 
