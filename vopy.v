@@ -137,6 +137,7 @@ fn copy_file(src string, dst string, force bool, interactive bool, preserve bool
 
 	mut buffer := []u8{len: 65536}
 	mut last_update := time.ticks()
+	mut unflushed_bytes := u64(0)
 
 	for {
 		read_bytes := src_file.read(mut buffer) or {
@@ -151,31 +152,50 @@ fn copy_file(src string, dst string, force bool, interactive bool, preserve bool
 		}
 
 		dst_file.write(buffer[..read_bytes]) or {
-			return error("Write failed at byte ${state.copied}. State saved.")
+			return error("Write failed at byte ${state.copied + unflushed_bytes}. State saved.")
 		}
-		dst_file.flush()
 
+		unflushed_bytes += u64(read_bytes)
+
+		if unflushed_bytes >= 8388608 {
+			dst_file.flush()
+			$if windows {
+				C._commit(dst_file.fd)
+			} $else {
+				C.fsync(dst_file.fd)
+			}
+			state.copied += unflushed_bytes
+			os.write_file(tmp_meta_path, json.encode(state)) or {
+				return error("Failed to write temporary metadata. Halting.")
+			}
+			os.mv(tmp_meta_path, meta_path) or {
+				return error("Failed to atomically rename metadata. Halting.")
+			}
+			unflushed_bytes = 0
+		}
+
+		current_ticks := time.ticks()
+		if current_ticks - last_update >= 200 {
+			percent := (f64(state.copied + unflushed_bytes) / f64(state.src_size)) * 100.0
+			print('\rCopying: ${percent:.2f}% (${state.copied + unflushed_bytes}/${state.src_size} bytes)')
+			os.flush()
+			last_update = current_ticks
+		}
+	}
+
+	if unflushed_bytes > 0 {
+		dst_file.flush()
 		$if windows {
 			C._commit(dst_file.fd)
 		} $else {
 			C.fsync(dst_file.fd)
 		}
-
-		state.copied += u64(read_bytes)
-
+		state.copied += unflushed_bytes
 		os.write_file(tmp_meta_path, json.encode(state)) or {
 			return error("Failed to write temporary metadata. Halting.")
 		}
 		os.mv(tmp_meta_path, meta_path) or {
 			return error("Failed to atomically rename metadata. Halting.")
-		}
-
-		current_ticks := time.ticks()
-		if current_ticks - last_update >= 200 {
-			percent := (f64(state.copied) / f64(state.src_size)) * 100.0
-			print('\rCopying: ${percent:.2f}% (${state.copied}/${state.src_size} bytes)')
-			os.flush()
-			last_update = current_ticks
 		}
 	}
 
