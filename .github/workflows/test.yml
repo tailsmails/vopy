@@ -1,0 +1,41 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  APP_NAME: vopy
+
+jobs:
+  test-release-binary:
+    name: Test Production Static Binary (Linux AMD64)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup V Compiler
+        uses: vlang/setup-v@v1
+        with:
+          check-latest: true
+
+      - name: Install musl-tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Build Production Static Binary
+        run: |
+          V_ROOT=$(dirname $(readlink -f $(which v)))
+          v -d no_backtrace -enable-globals -autofree -os linux -o $APP_NAME.c .
+          musl-gcc -O3 -static -I "$V_ROOT/thirdparty/cJSON" $APP_NAME.c "$V_ROOT/thirdparty/cJSON/cJSON.c" -o $APP_NAME -lm
+
+      - name: Run Test Suite on Static Binary
+        run: |
+          chmod +x test_vopy.sh
+          ./test_vopy.sh
