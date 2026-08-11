@@ -135,7 +135,7 @@ fn copy_file(src string, dst string, force bool, interactive bool, preserve bool
 	src_file.seek(i64(state.copied), .start) or { return err }
 	dst_file.seek(i64(state.copied), .start) or { return err }
 
-	mut buffer := []u8{len: 65536}
+	mut buffer := []u8{len: 1048576}
 	mut last_update := time.ticks()
 	mut unflushed_bytes := u64(0)
 
@@ -157,7 +157,7 @@ fn copy_file(src string, dst string, force bool, interactive bool, preserve bool
 
 		unflushed_bytes += u64(read_bytes)
 
-		if unflushed_bytes >= 8388608 {
+		if unflushed_bytes >= 134217728 {
 			dst_file.flush()
 			$if windows {
 				C._commit(dst_file.fd)
@@ -237,8 +237,8 @@ fn verify_files(src string, dst string) !bool {
 	mut dst_file := os.open(dst) or { return err }
 	defer { dst_file.close() }
 
-	mut src_buf := []u8{len: 65536}
-	mut dst_buf := []u8{len: 65536}
+	mut src_buf := []u8{len: 1048576}
+	mut dst_buf := []u8{len: 1048576}
 
 	for {
 		src_read := src_file.read(mut src_buf) or {
