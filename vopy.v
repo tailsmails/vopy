@@ -28,6 +28,7 @@ fn main() {
 	verbose := fp.bool('verbose', `v`, false, 'Explain what is being done')
 	size_only := fp.bool('size-only', `s`, false, 'Skip files if size matches, ignoring modification time')
 	sync_interval := fp.int('sync-interval', `t`, 5, 'Time interval in seconds to sync metadata on disk')
+	smart_overwrite := fp.bool('smart-overwrite', `m`, false, 'Only overwrite changed blocks to preserve disk writes')
 
 	positional := fp.finalize() or {
 		eprintln('CLI Argument Error: ${err}')
@@ -52,7 +53,7 @@ fn main() {
 		if !dst.ends_with(os.file_name(src)) {
 			final_dst = os.join_path(dst, os.file_name(src))
 		}
-		copy_dir(src, final_dst, force, interactive, preserve, verbose, size_only, sync_interval) or {
+		copy_dir(src, final_dst, force, interactive, preserve, verbose, size_only, sync_interval, smart_overwrite) or {
 			eprintln('Directory copy error: ${err}')
 			exit(1)
 		}
@@ -61,14 +62,14 @@ fn main() {
 		if os.is_dir(dst) {
 			final_dst = os.join_path(dst, os.file_name(src))
 		}
-		copy_file(src, final_dst, force, interactive, preserve, verbose, size_only, sync_interval) or {
+		copy_file(src, final_dst, force, interactive, preserve, verbose, size_only, sync_interval, smart_overwrite) or {
 			eprintln('File copy error: ${err}')
 			exit(1)
 		}
 	}
 }
 
-fn copy_file(src string, dst string, force bool, interactive bool, preserve bool, verbose bool, size_only bool, sync_interval int) ! {
+fn copy_file(src string, dst string, force bool, interactive bool, preserve bool, verbose bool, size_only bool, sync_interval int, smart_overwrite bool) ! {
 	if !os.exists(src) {
 		return error("Source file '${src}' does not exist.")
 	}
@@ -79,7 +80,7 @@ fn copy_file(src string, dst string, force bool, interactive bool, preserve bool
 
 	if os.exists(dst) && !force {
 		if os.file_size(dst) == src_size && !os.exists(meta_path) {
-			if size_only || os.file_last_mod_unix(src) == os.file_last_mod_unix(dst) {
+			if !smart_overwrite && (size_only || os.file_last_mod_unix(src) == os.file_last_mod_unix(dst)) {
 				if verbose {
 					println("Skipping completed file: '${src}' -> '${dst}'")
 				}
@@ -122,7 +123,7 @@ fn copy_file(src string, dst string, force bool, interactive bool, preserve bool
 		println("Copying: '${src}' -> '${dst}'")
 	}
 
-	if !os.exists(dst) {
+	if !os.exists(dst) || !os.exists(meta_path) {
 		mut f := os.create(dst) or { return err }
 		f.close()
 	}
@@ -136,13 +137,22 @@ fn copy_file(src string, dst string, force bool, interactive bool, preserve bool
 	src_file.seek(i64(state.copied), .start) or { return err }
 	dst_file.seek(i64(state.copied), .start) or { return err }
 
+	if !os.exists(meta_path) {
+		os.write_file(tmp_meta_path, json.encode(state)) or {
+			return error("Failed to write temporary metadata. Halting.")
+		}
+		os.mv(tmp_meta_path, meta_path) or {
+			return error("Failed to atomically rename metadata. Halting.")
+		}
+	}
+
 	mut buffer := []u8{len: 1048576}
 	mut last_update := time.ticks()
 	mut last_meta_write := time.ticks()
 	mut unflushed_bytes := u64(0)
 
 	mut interval_ms := i64(sync_interval) * 1000
-	if interval_ms < 1000 {
+	if sync_interval < 0 {
 		interval_ms = 1000
 	}
 
@@ -158,8 +168,31 @@ fn copy_file(src string, dst string, force bool, interactive bool, preserve bool
 			break
 		}
 
-		dst_file.write(buffer[..read_bytes]) or {
-			return error("Write failed at byte ${state.copied + unflushed_bytes}. State saved.")
+		mut should_write := true
+		if smart_overwrite {
+			mut dst_buffer := []u8{len: read_bytes}
+			dst_read_bytes := dst_file.read(mut dst_buffer) or { 0 }
+			if dst_read_bytes == read_bytes {
+				mut matches := true
+				for i in 0 .. read_bytes {
+					if buffer[i] != dst_buffer[i] {
+						matches = false
+						break
+					}
+				}
+				if matches {
+					should_write = false
+				}
+			}
+			if should_write {
+				dst_file.seek(i64(state.copied + unflushed_bytes), .start) or { return err }
+			}
+		}
+
+		if should_write {
+			dst_file.write(buffer[..read_bytes]) or {
+				return error("Write failed at byte ${state.copied + unflushed_bytes}. State saved.")
+			}
 		}
 
 		unflushed_bytes += u64(read_bytes)
@@ -228,7 +261,7 @@ fn copy_file(src string, dst string, force bool, interactive bool, preserve bool
 	}
 }
 
-fn copy_dir(src string, dst string, force bool, interactive bool, preserve bool, verbose bool, size_only bool, sync_interval int) ! {
+fn copy_dir(src string, dst string, force bool, interactive bool, preserve bool, verbose bool, size_only bool, sync_interval int, smart_overwrite bool) ! {
 	if !os.exists(dst) {
 		if verbose {
 			println("Creating directory: '${dst}'")
@@ -242,9 +275,9 @@ fn copy_dir(src string, dst string, force bool, interactive bool, preserve bool,
 		dst_child := os.join_path(dst, file)
 
 		if os.is_dir(src_child) {
-			copy_dir(src_child, dst_child, force, interactive, preserve, verbose, size_only, sync_interval) or { return err }
+			copy_dir(src_child, dst_child, force, interactive, preserve, verbose, size_only, sync_interval, smart_overwrite) or { return err }
 		} else {
-			copy_file(src_child, dst_child, force, interactive, preserve, verbose, size_only, sync_interval) or { return err }
+			copy_file(src_child, dst_child, force, interactive, preserve, verbose, size_only, sync_interval, smart_overwrite) or { return err }
 		}
 	}
 
