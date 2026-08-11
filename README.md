@@ -1,6 +1,6 @@
 # vopy
 
-An open-source, terminal-based resilient file copying utility written in V. It operates as a systems-level utility, managing raw file descriptors directly to handle interrupted physical transfers, prevent SSD write-amplification, and enforce block-level data integrity.
+An open-source, terminal-based resilient file copying utility written in V. It operates as a systems-level utility, managing raw file descriptors directly to handle interrupted physical transfers, prevent SSD write-amplification, and enforce block-level data consistency.
 
 While traditional copy commands assume stable hardware connections, `vopy` brings transactional persistence to standard file operations on local, network, and volatile external storage devices.
 
@@ -8,16 +8,16 @@ While traditional copy commands assume stable hardware connections, `vopy` bring
 
 ## Transactional Resiliency: Data Integrity Over Naive Speed
 
-Traditional copying tools operate on a fire-and-forget basis. If an interruption occurs, such as a bus reset, USB disconnect, or sudden power loss the partially written destination file is left in an unverified state. Often, the operating system's write-cache delays lead to trailing corruptions or null-bytes that remain undetected until the file is accessed.
+Traditional copying tools operate on a fire-and-forget basis. If an interruption occurs, such as a bus reset, USB disconnect, or sudden power loss, the partially written destination file is left in an unverified state. Often, the operating system's write-cache delays lead to trailing corruptions or null-bytes that remain undetected until the file is accessed.
 
-`vopy` operates on the principle that recovery should be deterministic and seamless. It takes an active transactional approach, tracking exact physical block commits using double-buffered atomic metadata transactions. This allows the utility to resume transfers precisely from the last verified block, overwriting any trailing uncommitted bytes at the destination to ensure the final file matches the source.
+`vopy` operates on the principle that recovery should be deterministic and seamless. It takes an active transactional approach, tracking exact physical block commits using RAM-buffered atomic metadata transactions. This allows the utility to resume transfers precisely from the last verified block, overwriting any trailing uncommitted bytes at the destination to ensure the final file matches the source.
 
 ## Core Mechanics
 
-* **Write-Amplification Mitigation:** Performs read and write operations in fixed $64\text{ KB}$ buffer blocks. Aligning disk writes with common flash-memory page boundaries avoids the severe wear-and-tear and performance degradation associated with single-byte or misaligned small writes on SSDs.
-* **Atomic Metadata Ledger:** Writes state updates to a temporary staging file (`.resume.tmp`) first, then executes an atomic rename to the stable checkpoint file (`.resume`). This prevents the checkpoint data itself from becoming corrupted if a power failure occurs mid-write.
+* **Write-Amplification Mitigation:** Performs read and write operations in fixed $1\text{ MB}$ buffer blocks. Aligning disk writes with common flash-memory page boundaries avoids the severe wear-and-tear and performance degradation associated with single-byte or misaligned small writes on SSDs.
+* **Atomic Metadata Ledger:** Caches progress state in memory and commits updates temporally to a temporary staging file (`.resume.tmp`) first, then executes an atomic rename to the stable checkpoint file (`.resume`) based on a user-defined sync interval. This prevents the checkpoint data itself from becoming corrupted if a power failure occurs mid-write while reducing continuous small write stresses.
 * **Overwriting Recovery (Correction Seek):** To resume a transfer, the tool seeks to the exact offset stored in the metadata ledger. Any uncommitted, garbage, or incomplete bytes written past this offset during the previous session are overwritten, ensuring no invalid gaps exist.
-* **Zero-Dependency Verification:** Compares the final destination file against the source block-by-block using sequential memory comparison. This ensures absolute identity without relying on external cryptographic libraries, which can introduce compilation overhead or CPU bottlenecks.
+* **Idempotent Path Mapping:** Enforces deterministic path resolution during directory traversal. This ensures that repeated execution of an interrupted recursive copy command consistently targets the same subdirectory structure, preventing orphaned partial progress blocks.
 
 ## Prerequisites
 
@@ -42,15 +42,17 @@ vopy [OPTIONS] <source> <destination>
 
 ### Options
 
-* `-r`, `--recursive` : Copy directories recursively while maintaining internal structure.
-* `-f`, `--force`     : Force a fresh copy from offset zero, bypassing any existing `.resume` metadata.
-* `-i`, `--interactive` : Prompt the user for confirmation before initiating a resume or overwriting an existing destination.
-* `-p`, `--preserve`    : Sync the source file's last modified timestamp (`mtime`) to the destination upon successful transfer.
-* `-v`, `--verbose`     : Print verbose output explaining transfer offsets, resumption events, and validation phases.
+* `-r`, `--recursive`     : Copy directories recursively while maintaining internal structure.
+* `-f`, `--force`         : Force a fresh copy from offset zero, bypassing any existing `.resume` metadata.
+* `-i`, `--interactive`   : Prompt the user for confirmation before initiating a resume or overwriting an existing destination.
+* `-n`, `--no-preserve`   : Do not preserve file modification time (`mtime`).
+* `-s`, `--size-only`     : Skip files if size matches, ignoring modification time.
+* `-t`, `--sync-interval` : Interval in seconds (default: `5`, clamped to a minimum safety threshold of `1` second) to flush RAM buffers and commit state checkpoints to the disk.
+* `-v`, `--verbose`       : Print verbose output explaining transfer offsets, resumption events, and validation phases.
 
 ## Emergency Restore
 
-Sending a standard interruption signal (such as `Ctrl+C` or `SIGINT`) halts the active copy loop safely. Because the metadata ledger is committed to the disk at every chunk boundary, the current offset is preserved immediately on the destination storage medium, allowing the copy process to resume at any point in the future.
+Sending a standard interruption signal (such as `Ctrl+C` or `SIGINT`) halts the active copy loop safely. Because the metadata ledger is committed to the disk at configured temporal boundaries, the current offset is preserved immediately on the destination storage medium, allowing the copy process to resume at any point in the future.
 
 ## Disclaimer
 
