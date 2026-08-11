@@ -62,7 +62,7 @@ jobs:
             build_cmd: |
               V_ROOT=$(dirname $(readlink -f $(which v)))
               v $EXTRA_FLAGS -d no_backtrace -enable-globals -autofree -os windows -o $APP_NAME.c .
-              x86_64-w64-mingw32-gcc -O3 -static -I "$V_ROOT/thirdparty/cJSON" $APP_NAME.c "$V_ROOT/thirdparty/cJSON/cJSON.c" -o $APP_NAME$SUFFIX -lws2_32 -liphlpapi -lbcrypt -ladvapi32 -luser32 -lshell32
+              x86_64-w64-mingw32-gcc -O3 -static -I "$V_ROOT/thirdparty/cJSON" $APP_NAME.c "$V_ROOT/thirdparty/cJSON/cJSON.c" -o $APP_NAME$SUFFIX -municode -lws2_32 -liphlpapi -lbcrypt -ladvapi32 -luser32 -lshell32
             artifact_suffix: -windows-amd64.exe
 
           - target: windows-386
@@ -71,7 +71,7 @@ jobs:
             build_cmd: |
               V_ROOT=$(dirname $(readlink -f $(which v)))
               v $EXTRA_FLAGS -d no_backtrace -enable-globals -autofree -os windows -o $APP_NAME.c .
-              i686-w64-mingw32-gcc -O3 -static -I "$V_ROOT/thirdparty/cJSON" $APP_NAME.c "$V_ROOT/thirdparty/cJSON/cJSON.c" -o $APP_NAME$SUFFIX -lws2_32 -liphlpapi -lbcrypt -ladvapi32 -luser32 -lshell32
+              i686-w64-mingw32-gcc -O3 -static -I "$V_ROOT/thirdparty/cJSON" $APP_NAME.c "$V_ROOT/thirdparty/cJSON/cJSON.c" -o $APP_NAME$SUFFIX -municode -lws2_32 -liphlpapi -lbcrypt -ladvapi32 -luser32 -lshell32
             artifact_suffix: -windows-386.exe
 
     steps:
