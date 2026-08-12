@@ -6,6 +6,11 @@ While traditional copy commands assume stable hardware connections, `vopy` bring
 
 > Note: Developed to target cross-platform file systems, this utility functions natively on Linux, macOS, and Windows with zero platform-specific external dependencies.
 
+[![ASan Verified](https://img.shields.io/badge/ASan-Verified-success?style=flat-square&logo=github-actions&logoColor=white)](#)
+[![UBSan Passed](https://img.shields.io/badge/UBSan-Passed-success?style=flat-square&logo=github-actions&logoColor=white)](#)
+[![TSan Secured](https://img.shields.io/badge/TSan-Secured-success?style=flat-square&logo=github-actions&logoColor=white)](#)
+[![MSan Clean](https://img.shields.io/badge/MSan-Clean-success?style=flat-square&logo=github-actions&logoColor=white)](#)
+
 ## Transactional Resiliency: Data Integrity Over Naive Speed
 
 Traditional copying tools operate on a fire-and-forget basis. If an interruption occurs, such as a bus reset, USB disconnect, or sudden power loss, the partially written destination file is left in an unverified state. Often, the operating system's write-cache delays lead to trailing corruptions or null-bytes that remain undetected until the file is accessed.
