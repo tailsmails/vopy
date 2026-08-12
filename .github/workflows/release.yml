@@ -3,6 +3,9 @@ name: Auto Release
 on:
   push:
     branches: [ main, master ]
+    paths:
+      - '**/*.v'
+      - '**/*.yml'
   workflow_dispatch:
 
 permissions:
@@ -97,7 +100,7 @@ jobs:
             setup_cmd: |
               sudo apt-get update && sudo apt-get install -y clang lld
               mkdir -p freebsd-sysroot
-              curl -LSs https://download.freebsd.org/releases/amd64/amd64/14.4-RELEASE/base.txz | tar -xJ -C freebsd-sysroot usr/include usr/lib lib
+              curl -LSs https://download.freebsd.org/releases/amd64/amd64/14.4-RELEASE/base.txz | tar -xJ -C freebsd-sysroot ./usr/include ./usr/lib ./lib
             build_cmd: |
               V_ROOT=$(dirname $(readlink -f $(which v)))
               v $EXTRA_FLAGS -d no_backtrace -enable-globals -autofree -os freebsd -o $APP_NAME.c .
