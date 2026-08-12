@@ -1,0 +1,36 @@
+name: Sanitized CI Check
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - '**/*.v'
+      - '**/*.yml'
+      - '**/*.sh'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - '**/*.v'
+      - '**/*.yml'
+      - '**/*.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  run-sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install V Language
+        uses: vlang/setup-v@v1
+        with:
+          check-latest: true
+
+      - name: Run Dynamic Sanitizers Suite
+        run: |
+          chmod +x .github/workflows/run_sanitizers.sh
+          ./.github/workflows/run_sanitizers.sh
