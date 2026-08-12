@@ -144,10 +144,22 @@ jobs:
           path: ./artifacts
           merge-multiple: true
 
+      - name: Delete older releases and tags
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Scanning for previous releases..."
+          gh release list --limit 1000 --json tagName --jq '.[].tagName' | while read -r tag; do
+            if [ "$tag" != "latest" ] && [ -n "$tag" ]; then
+              echo "Pruning older release and tag: $tag"
+              gh release delete "$tag" --yes --cleanup-tag || true
+            fi
+          done
+
       - name: Upload to Release
         uses: ncipollo/release-action@v1
         with:
-          tag: build-${{ github.run_number }}
+          tag: latest
           name: Build ${{ github.run_number }}
           artifacts: ./artifacts/*
           generateReleaseNotes: true
