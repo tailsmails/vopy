@@ -144,15 +144,23 @@ jobs:
           path: ./artifacts
           merge-multiple: true
 
-      - name: Delete older releases and tags
+      - name: Delete older releases and git tags
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Scanning for previous releases..."
+          echo "=== Phase 1: Pruning older releases ==="
           gh release list --limit 1000 --json tagName --jq '.[].tagName' | while read -r tag; do
             if [ "$tag" != "latest" ] && [ -n "$tag" ]; then
-              echo "Pruning older release and tag: $tag"
+              echo "Deleting release: $tag"
               gh release delete "$tag" --yes --cleanup-tag || true
+            fi
+          done
+
+          echo "=== Phase 2: Pruning orphaned git tags (All Pages) ==="
+          gh api --paginate "repos/${{ github.repository }}/tags" --jq '.[].name' | while read -r tag; do
+            if [ "$tag" != "latest" ] && [ -n "$tag" ]; then
+              echo "Pruning remote git tag ref: $tag"
+              gh api -X DELETE "repos/${{ github.repository }}/git/refs/tags/$tag" || true
             fi
           done
 
