@@ -15,7 +15,7 @@ elif [ -f "./tests.sh" ]; then
     chmod +x "./tests.sh"
     RUN_CMD="./tests.sh"
 else
-    RUN_CMD="./vopy_test_fallback.sh"
+    RUN_CMD="./vopy_test_fallback.sh" # I will add it later...
     cat << 'EOF' > "$RUN_CMD"
 #!/usr/bin/env bash
 set -xe
