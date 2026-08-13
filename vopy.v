@@ -18,7 +18,7 @@ fn main() {
 	mut fp := flag.new_flag_parser(os.args)
 	fp.application('vopy')
 	fp.version('1.0.1')
-	fp.description('Resumable bit-by-bit file copy with checksum integrity.')
+	fp.description('Resumable bit-by-bit file copy.')
 	fp.skip_executable()
 
 	recursive := fp.bool('recursive', `r`, false, 'Copy directories recursively')
