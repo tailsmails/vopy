@@ -6,10 +6,10 @@ While traditional copy commands assume stable hardware connections, `vopy` bring
 
 > Note: Developed to target cross-platform file systems, this utility functions natively on Linux, macOS, and Windows with zero platform-specific external dependencies.
 
-[![ASan Verified](https://img.shields.io/badge/ASan-Verified-success?style=flat-square&logo=github-actions&logoColor=white)](#)
-[![UBSan Passed](https://img.shields.io/badge/UBSan-Passed-success?style=flat-square&logo=github-actions&logoColor=white)](#)
-[![TSan Secured](https://img.shields.io/badge/TSan-Secured-success?style=flat-square&logo=github-actions&logoColor=white)](#)
-[![MSan Clean](https://img.shields.io/badge/MSan-Clean-success?style=flat-square&logo=github-actions&logoColor=white)](#)
+![ASan Verified](https://img.shields.io/badge/ASan-Verified-success?style=flat-square&logo=llvm&logoColor=white)
+![TSan Secured](https://img.shields.io/badge/TSan-Secured-success?style=flat-square&logo=llvm&logoColor=white)
+![UBSan Passed](https://img.shields.io/badge/UBSan-Passed-success?style=flat-square&logo=llvm&logoColor=white)
+![MSan Clean](https://img.shields.io/badge/MSan-Clean-success?style=flat-square&logo=llvm&logoColor=white)
 
 ## Transactional Resiliency: Data Integrity Over Naive Speed
 
